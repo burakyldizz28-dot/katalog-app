@@ -4,6 +4,14 @@ import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { Session, User } from '@supabase/supabase-js'
 
+export interface SignInError {
+  type?: string | null
+  code?: string | null
+  status?: string | number | null
+  detail?: string | null
+  message?: string | null
+}
+
 export interface Profile {
   id: string
   username: string
