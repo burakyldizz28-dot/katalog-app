@@ -152,6 +152,7 @@ src/
 ---
 
 ## Güvenlik
+ 
 
 - **Middleware** korumalı rotaları kontrol eder
 - **RLS politikaları** veritabanı seviyesinde erişimi kısıtlar
