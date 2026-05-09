@@ -5,12 +5,30 @@ import { createClient } from '@/lib/supabase/client'
 import type { Session, User } from '@supabase/supabase-js'
 
 export interface SignInError {
-  type?: string | null
+  message: string
+  generatedEmail?: string | null
+  passwordLength?: number | null
+  errorType?: string | null
   code?: string | null
   status?: string | number | null
-  detail?: string | null
-  message?: string | null
+  devDetail?: string | null
 }
+
+export interface TestAuthSuccess {
+  success: true
+  userEmail: string | null
+  userId: string | null
+}
+
+export interface TestAuthFailure {
+  success: false
+  errorMessage: string
+  errorCode: string | null
+  errorStatus: number | string | null
+  rawError: string
+}
+
+export type TestAuthResult = TestAuthSuccess | TestAuthFailure
 
 export interface Profile {
   id: string
@@ -100,9 +118,14 @@ export function useAuth() {
       })
     }
 
-    supabase.auth.getSession()
-      .then(function (res) { resolve(res.data.session || null) })
-      .catch(function () { if (mounted) setState(EMPTY_STATE) })
+    supabase.auth
+      .getSession()
+      .then(function (res) {
+        resolve(res.data.session || null)
+      })
+      .catch(function () {
+        if (mounted) setState(EMPTY_STATE)
+      })
 
     const sub = supabase.auth.onAuthStateChange(function (_e, session) {
       resolve(session)
@@ -114,9 +137,11 @@ export function useAuth() {
     }
   }, [])
 
+  // GİRİŞ — başarısızlıkta SignInError throw eder
   const signIn = useCallback(async function (username: string, password: string) {
     const supabase = createClient()
 
+    // 1) profiles tablosunda username -> internal_email araması
     let email: string | null = null
     try {
       const { data, error } = await supabase
@@ -128,7 +153,7 @@ export function useAuth() {
         email = data.internal_email
       }
     } catch (e) {
-      // sessizce yut
+      // ignore
     }
 
     if (!email) {
@@ -143,16 +168,29 @@ export function useAuth() {
       email: email,
       password: password,
     })
-    if (error) throw error
+
+    if (error) {
+      const signInError: SignInError = {
+        message: error.message || 'Giris basarisiz',
+        generatedEmail: email,
+        passwordLength: password.length,
+        errorType: 'auth_error',
+        code: (error as any).code || null,
+        status: (error as any).status || null,
+        devDetail: error.message || null,
+      }
+      throw signInError
+    }
     return data
   }, [])
 
+  // ÇIKIŞ
   const signOut = useCallback(async function () {
     const supabase = createClient()
     try {
       await supabase.auth.signOut()
     } catch (e) {
-      // sessizce yut
+      // ignore
     } finally {
       setState(EMPTY_STATE)
       if (typeof window !== 'undefined') {
@@ -161,7 +199,48 @@ export function useAuth() {
     }
   }, [])
 
-  return { ...state, signIn: signIn, signOut: signOut }
+  // TEST — debug aracı, throw etmez, sonucu döner
+  const testSupabaseAuth = useCallback(async function (
+    email: string,
+    password: string
+  ): Promise<TestAuthResult> {
+    const supabase = createClient()
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email,
+        password: password,
+      })
+      if (error) {
+        return {
+          success: false,
+          errorMessage: error.message || 'Bilinmeyen hata',
+          errorCode: (error as any).code || null,
+          errorStatus: (error as any).status || null,
+          rawError: JSON.stringify(error),
+        }
+      }
+      return {
+        success: true,
+        userEmail: (data && data.user && data.user.email) || null,
+        userId: (data && data.user && data.user.id) || null,
+      }
+    } catch (e: any) {
+      return {
+        success: false,
+        errorMessage: (e && e.message) || 'Test exception',
+        errorCode: null,
+        errorStatus: null,
+        rawError: (e && (e.toString() || JSON.stringify(e))) || 'Unknown',
+      }
+    }
+  }, [])
+
+  return {
+    ...state,
+    signIn: signIn,
+    signOut: signOut,
+    testSupabaseAuth: testSupabaseAuth,
+  }
 }
 
 export function requireAdmin(state: AuthState): boolean {
